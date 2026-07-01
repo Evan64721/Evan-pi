@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evan Leckliter</title>
+  <meta name="description" content="Personal website of Evan Leckliter." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>Evan Leckliter</h1>
+      <p class="tagline">Welcome to my corner of the internet.</p>
+    </header>
+
+    <section>
+      <p>
+        This site is served from a Raspberry Pi and deployed straight from
+        <a href="https://github.com/Evan64721/Evan-pi">GitHub</a>.
+      </p>
+    </section>
+
+    <footer>
+      <p>&copy; <span id="year"></span> Evan Leckliter &middot; evan.leckliter.net</p>
+    </footer>
+  </main>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
