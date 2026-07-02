@@ -41,7 +41,7 @@
 </head>
 <body>
   <h1>Triangles</h1>
-  <p class="sub">Tap one dot, then another, to draw a line between them &mdash; but lines can&rsquo;t cross an existing line or pass through a dot. Whenever your line closes off a triangle, it&rsquo;s filled in your color and you go again. When no more lines can be drawn, the most triangles wins.</p>
+  <p class="sub">Click a dot and drag to another dot to draw a line (on a touchscreen, touch a dot and drag your finger over). A line can&rsquo;t cross another line or touch a third dot. Close off a triangle with no dots inside it and it&rsquo;s filled in your color &mdash; and you take another turn. When no moves remain, the most triangles wins.</p>
 
   <div class="controls">
     <label for="mode">Mode</label>
@@ -87,7 +87,7 @@
     let triangles;            // [{v:[i,j,k], owner}]
     let triKeys;             // Set of "i,j,k" already claimed
     let current, scores, mode, busy;
-    let selected = null, pointer = null;
+    let selected = null, pointer = null, dragging = false;
 
     // ---------- geometry ----------
     function orient(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
@@ -278,7 +278,7 @@
       // preview line while choosing a second dot
       if (selected !== null && pointer && !busy && humanTurn()) {
         const a = dots[selected];
-        const t = nearestDot(pointer, 20);
+        const t = nearestDot(pointer, 24);
         const end = t >= 0 ? dots[t] : pointer;
         const ok = t >= 0 && t !== selected && legal(selected, t);
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(end.x, end.y);
@@ -336,19 +336,34 @@
     }
     canvas.addEventListener('pointerdown', function (e) {
       if (busy || !humanTurn()) return;
-      const p = coords(e), i = nearestDot(p, 22);
-      if (i < 0) { selected = null; render(); return; }
-      if (selected === null) { selected = i; render(); return; }
-      if (i === selected) { selected = null; render(); return; }
-      if (legal(selected, i)) drawEdge(selected, i);
-      else { selected = i; render(); }        // start fresh from the new dot
+      const p = coords(e), i = nearestDot(p, 24);
+      pointer = p;
+      if (i < 0) { selected = null; dragging = false; render(); return; }
+      // tap-tap fallback: a dot is already picked and this is a different, legal target
+      if (selected !== null && i !== selected && legal(selected, i)) { drawEdge(selected, i); return; }
+      selected = i; dragging = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      render();
     });
     canvas.addEventListener('pointermove', function (e) {
-      if (e.pointerType === 'touch') return;
+      if (busy || !humanTurn() || selected === null) return;
       pointer = coords(e);
-      if (selected !== null && !busy && humanTurn()) render();
+      render();
     });
-    canvas.addEventListener('pointerleave', function () { pointer = null; if (selected !== null) render(); });
+    canvas.addEventListener('pointerup', function (e) {
+      if (!dragging) return;
+      dragging = false;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      const j = nearestDot(coords(e), 24);
+      if (j >= 0 && j !== selected && legal(selected, j)) drawEdge(selected, j);
+      else if (j !== selected) { selected = null; render(); }   // dragged to empty/illegal spot
+      else render();                                            // tap in place: keep dot for click-click
+    });
+    canvas.addEventListener('pointercancel', function () { dragging = false; selected = null; render(); });
+    canvas.addEventListener('pointerleave', function () {
+      if (dragging) return;                                     // keep preview during a drag
+      pointer = null; if (selected !== null) render();
+    });
 
     document.getElementById('newgame').addEventListener('click', newGame);
     modeSel.addEventListener('change', newGame);
