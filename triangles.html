@@ -4,27 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Triangles &middot; Evan Leckliter</title>
-  <meta name="description" content="Triangles — the classic dots-and-triangles pencil game. Play vs the computer or a friend." />
+  <meta name="description" content="Triangles — connect the scattered dots and claim the triangles you complete. Play vs the computer or a friend." />
   <style>
     :root {
-      --bg: #0f1116;
-      --fg: #e6e6e6;
-      --muted: #9aa0aa;
-      --line: #2a2f3a;
-      --p0: #6ca0ff;   /* You */
-      --p1: #ff7a59;   /* CPU / Player 2 */
-      --accent: #6ca0ff;
+      --bg: #0f1116; --fg: #e6e6e6; --muted: #9aa0aa; --line: #2a2f3a;
+      --p0: #6ca0ff; --p1: #ff7a59; --accent: #6ca0ff;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0; min-height: 100vh;
       display: flex; flex-direction: column; align-items: center;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg); color: var(--fg);
-      padding: 1.5rem 1rem 3rem;
+      background: var(--bg); color: var(--fg); padding: 1.5rem 1rem 3rem;
     }
     h1 { font-size: 2rem; margin: 0 0 .25rem; }
-    .sub { color: var(--muted); margin: 0 0 1.25rem; text-align: center; max-width: 34rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; text-align: center; max-width: 40rem; line-height: 1.5; }
     .controls { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin-bottom: 1rem; }
     .controls label { color: var(--muted); font-size: .9rem; align-self: center; }
     select, button {
@@ -35,8 +29,7 @@
     button:hover { border-color: var(--accent); }
     .scoreboard { display: flex; gap: 1rem; margin-bottom: .75rem; }
     .score { padding: .5rem 1rem; border-radius: 10px; border: 2px solid transparent; min-width: 7rem; text-align: center; background: #171b24; }
-    .score.p0 { color: var(--p0); }
-    .score.p1 { color: var(--p1); }
+    .score.p0 { color: var(--p0); } .score.p1 { color: var(--p1); }
     .score.active { border-color: currentColor; box-shadow: 0 0 0 3px rgba(108,160,255,.12); }
     .score .num { font-size: 1.6rem; font-weight: 700; line-height: 1; }
     .score .name { font-size: .8rem; color: var(--muted); }
@@ -48,7 +41,7 @@
 </head>
 <body>
   <h1>Triangles</h1>
-  <p class="sub">Take turns drawing a line between two neighboring dots. Complete a triangle to score a point &mdash; and take another turn. Most triangles when the board fills up wins.</p>
+  <p class="sub">Tap one dot, then another, to draw a line between them &mdash; but lines can&rsquo;t cross an existing line or pass through a dot. Whenever your line closes off a triangle, it&rsquo;s filled in your color and you go again. When no more lines can be drawn, the most triangles wins.</p>
 
   <div class="controls">
     <label for="mode">Mode</label>
@@ -56,11 +49,11 @@
       <option value="cpu">Vs Computer</option>
       <option value="2p">2 Players</option>
     </select>
-    <label for="size">Size</label>
+    <label for="size">Dots</label>
     <select id="size">
-      <option value="3">Small</option>
-      <option value="4" selected>Medium</option>
-      <option value="5">Large</option>
+      <option value="14">14</option>
+      <option value="20" selected>20</option>
+      <option value="28">28</option>
     </select>
     <button id="newgame" class="primary">New Game</button>
   </div>
@@ -72,7 +65,7 @@
 
   <div id="status">Your turn</div>
 
-  <canvas id="board" width="480" height="440"></canvas>
+  <canvas id="board" width="640" height="460"></canvas>
 
   <a class="back" href="/">&larr; Back to home</a>
 
@@ -82,221 +75,254 @@
     const ctx = canvas.getContext('2d');
     const statusEl = document.getElementById('status');
     const s0 = document.getElementById('s0'), s1 = document.getElementById('s1');
-    const modeSel = document.getElementById('mode');
-    const sizeSel = document.getElementById('size');
+    const modeSel = document.getElementById('mode'), sizeSel = document.getElementById('size');
 
-    const COL = ['#6ca0ff', '#ff7a59'];   // player colors
-    const MARGIN = 44;
-    const TARGET_W = 480;
+    const W = 640, H = 460, M = 46, EPS = 1e-7;
+    const COL = ['#6ca0ff', '#ff7a59'];
+    const FILL = ['rgba(108,160,255,.30)', 'rgba(255,122,89,.30)'];
 
-    let N, s, h, originX, originY;
-    let edges, triangles;
-    let current, scores, mode, busy, hoverEdge;
+    let dots;                 // [{x,y}]
+    let edgeSet;              // Set of "i,j" (i<j)
+    let adj;                  // adj[i] = Set of neighbor indices
+    let triangles;            // [{v:[i,j,k], owner}]
+    let triKeys;             // Set of "i,j,k" already claimed
+    let current, scores, mode, busy;
+    let selected = null, pointer = null;
 
-    // ---- geometry helpers ----
-    function dotXY(r, j) {
-      return { x: originX + (j - r / 2) * s, y: originY + r * h };
-    }
-    function edgeDots(id) {
-      const p = id.split(':'), t = p[0], r = +p[1], j = +p[2];
-      if (t === 'L') return [[r, j], [r + 1, j]];
-      if (t === 'R') return [[r, j], [r + 1, j + 1]];
-      return [[r, j], [r, j + 1]]; // 'B'
-    }
-
-    // ---- build the board for N rows of small triangles ----
-    function buildBoard(n) {
-      N = n;
-      s = (TARGET_W - 2 * MARGIN) / N;
-      h = s * Math.sqrt(3) / 2;
-      originX = TARGET_W / 2;
-      originY = MARGIN;
-      canvas.width = TARGET_W;
-      canvas.height = Math.round(N * h + 2 * MARGIN);
-
-      edges = {};
-      triangles = [];
-      for (let r = 0; r < N; r++) {
-        for (let j = 0; j <= r; j++) {
-          edges['L:' + r + ':' + j] = { drawn: false };
-          edges['R:' + r + ':' + j] = { drawn: false };
-        }
-      }
-      for (let r = 1; r <= N; r++) {
-        for (let j = 0; j < r; j++) edges['B:' + r + ':' + j] = { drawn: false };
-      }
-      // upward triangles
-      for (let r = 0; r < N; r++) {
-        for (let j = 0; j <= r; j++) {
-          triangles.push({
-            owner: null,
-            edges: ['L:' + r + ':' + j, 'R:' + r + ':' + j, 'B:' + (r + 1) + ':' + j],
-            verts: [[r, j], [r + 1, j], [r + 1, j + 1]]
-          });
-        }
-      }
-      // downward triangles
-      for (let r = 1; r < N; r++) {
-        for (let j = 0; j < r; j++) {
-          triangles.push({
-            owner: null,
-            edges: ['B:' + r + ':' + j, 'L:' + r + ':' + (j + 1), 'R:' + r + ':' + j],
-            verts: [[r, j], [r, j + 1], [r + 1, j + 1]]
-          });
-        }
-      }
-    }
-
-    // ---- rendering ----
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // claimed triangles
-      for (const t of triangles) {
-        if (t.owner === null) continue;
-        const pts = t.verts.map(v => dotXY(v[0], v[1]));
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        ctx.lineTo(pts[1].x, pts[1].y);
-        ctx.lineTo(pts[2].x, pts[2].y);
-        ctx.closePath();
-        ctx.fillStyle = t.owner === 0 ? 'rgba(108,160,255,.28)' : 'rgba(255,122,89,.28)';
-        ctx.fill();
-      }
-
-      // edges
-      for (const id in edges) {
-        const [a, b] = edgeDots(id);
-        const pa = dotXY(a[0], a[1]), pb = dotXY(b[0], b[1]);
-        ctx.beginPath();
-        ctx.moveTo(pa.x, pa.y);
-        ctx.lineTo(pb.x, pb.y);
-        if (edges[id].drawn) {
-          ctx.strokeStyle = '#e6e6e6';
-          ctx.lineWidth = 4;
-        } else if (id === hoverEdge) {
-          ctx.strokeStyle = COL[current];
-          ctx.lineWidth = 4;
-        } else {
-          ctx.strokeStyle = '#2a2f3a';
-          ctx.lineWidth = 2;
-        }
-        ctx.lineCap = 'round';
-        ctx.stroke();
-      }
-
-      // dots
-      for (let r = 0; r <= N; r++) {
-        for (let j = 0; j <= r; j++) {
-          const p = dotXY(r, j);
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-          ctx.fillStyle = '#c3c9d4';
-          ctx.fill();
-        }
-      }
-    }
-
-    // ---- hit testing ----
-    function distToSeg(px, py, ax, ay, bx, by) {
-      const dx = bx - ax, dy = by - ay;
-      const len2 = dx * dx + dy * dy || 1;
-      let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    // ---------- geometry ----------
+    function orient(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
+    function triArea(a, b, c) { return Math.abs(orient(a, b, c)) / 2; }
+    function distToSeg(p, a, b) {
+      const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
+      let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
       t = Math.max(0, Math.min(1, t));
-      const cx = ax + t * dx, cy = ay + t * dy;
-      return Math.hypot(px - cx, py - cy);
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
     }
-    function edgeAt(px, py) {
-      let best = null, bestD = 14;
-      for (const id in edges) {
-        if (edges[id].drawn) continue;
-        const [a, b] = edgeDots(id);
-        const pa = dotXY(a[0], a[1]), pb = dotXY(b[0], b[1]);
-        const d = distToSeg(px, py, pa.x, pa.y, pb.x, pb.y);
-        if (d < bestD) { bestD = d; best = id; }
+    function properIntersect(p1, p2, p3, p4) {
+      const d1 = orient(p3, p4, p1), d2 = orient(p3, p4, p2),
+            d3 = orient(p1, p2, p3), d4 = orient(p1, p2, p4);
+      return ((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
+             ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS));
+    }
+    function pointInTri(p, a, b, c) {   // strictly inside
+      const A = triArea(a, b, c);
+      if (A < 1) return false;
+      const A1 = triArea(p, b, c), A2 = triArea(a, p, c), A3 = triArea(a, b, p);
+      if (A1 < 1 || A2 < 1 || A3 < 1) return false;              // on/near an edge
+      return Math.abs(A1 + A2 + A3 - A) < 0.5;
+    }
+
+    const key2 = (i, j) => i < j ? i + ',' + j : j + ',' + i;
+    const has = (i, j) => edgeSet.has(key2(i, j));
+
+    // Can we legally draw a line between dots i and j?
+    function legal(i, j) {
+      if (i === j || has(i, j)) return false;
+      const a = dots[i], b = dots[j];
+      // no other dot lying on the segment
+      for (let k = 0; k < dots.length; k++) {
+        if (k === i || k === j) continue;
+        if (distToSeg(dots[k], a, b) < 7) return false;
       }
-      return best;
-    }
-    function canvasCoords(evt) {
-      const rect = canvas.getBoundingClientRect();
-      return {
-        x: (evt.clientX - rect.left) * (canvas.width / rect.width),
-        y: (evt.clientY - rect.top) * (canvas.height / rect.height)
-      };
-    }
-
-    // ---- game logic ----
-    function humanTurn() { return mode === '2p' || current === 0; }
-
-    function applyMove(id) {
-      if (!edges[id] || edges[id].drawn) return;
-      edges[id].drawn = true;
-      let completed = 0;
-      for (const t of triangles) {
-        if (t.owner === null && t.edges.indexOf(id) !== -1 && t.edges.every(e => edges[e].drawn)) {
-          t.owner = current;
-          scores[current]++;
-          completed++;
-        }
+      // must not properly cross any existing edge
+      for (const e of edgeSet) {
+        const p = e.split(','), c = +p[0], d = +p[1];
+        if (c === i || c === j || d === i || d === j) continue;   // shares an endpoint
+        if (properIntersect(a, b, dots[c], dots[d])) return false;
       }
-      hoverEdge = null;
-      draw();
-      updateScores();
+      return true;
+    }
 
-      if (triangles.every(t => t.owner !== null)) { endGame(); return; }
-      if (completed === 0) current = 1 - current;
+    // Which empty, unclaimed triangles would drawing (i,j) complete?
+    function completedBy(i, j) {
+      const out = [];
+      for (const k of adj[i]) {
+        if (!adj[j].has(k)) continue;                            // k must border both
+        const kk = key3(i, j, k);
+        if (triKeys.has(kk)) continue;
+        if (isEmptyTri(i, j, k)) out.push(k);
+      }
+      return out;
+    }
+    const key3 = (i, j, k) => [i, j, k].sort((a, b) => a - b).join(',');
+    function isEmptyTri(i, j, k) {
+      for (let m = 0; m < dots.length; m++) {
+        if (m === i || m === j || m === k) continue;
+        if (pointInTri(dots[m], dots[i], dots[j], dots[k])) return false;
+      }
+      return true;
+    }
+
+    // ---------- moves ----------
+    function drawEdge(i, j) {
+      const completed = completedBy(i, j);          // find BEFORE adding (adjacency check is fine either way)
+      edgeSet.add(key2(i, j));
+      adj[i].add(j); adj[j].add(i);
+      let got = 0;
+      for (const k of completed) {
+        const kk = key3(i, j, k);
+        if (triKeys.has(kk)) continue;
+        triKeys.add(kk);
+        triangles.push({ v: [i, j, k], owner: current });
+        scores[current]++; got++;
+      }
+      selected = null;
+      render(); updateScores();
+
+      if (isGameOver()) { endGame(); return; }
+      if (got === 0) current = 1 - current;
       updateStatus();
-
       if (mode === 'cpu' && current === 1) { busy = true; setTimeout(aiStep, 480); }
       else busy = false;
     }
 
-    // AI: take a free triangle; else play a "safe" edge; else random
-    function aiStep() {
-      const open = Object.keys(edges).filter(id => !edges[id].drawn);
-      if (!open.length) return;
-      let pick = open.find(id => completesSome(id));
-      if (!pick) {
-        const safe = open.filter(id => !createsPairFor(id));
-        pick = safe.length ? safe[(Math.random() * safe.length) | 0]
-                           : open[(Math.random() * open.length) | 0];
-      }
-      applyMove(pick);
+    function allLegalMoves() {
+      const moves = [];
+      for (let i = 0; i < dots.length; i++)
+        for (let j = i + 1; j < dots.length; j++)
+          if (legal(i, j)) moves.push([i, j]);
+      return moves;
     }
-    function completesSome(id) {
-      return triangles.some(t => t.owner === null && t.edges.indexOf(id) !== -1 &&
-        t.edges.filter(e => edges[e].drawn).length === 2);
-    }
-    function createsPairFor(id) { // would hand the opponent a completion
-      return triangles.some(t => t.owner === null && t.edges.indexOf(id) !== -1 &&
-        t.edges.filter(e => edges[e].drawn).length === 1);
+    function isGameOver() {
+      for (let i = 0; i < dots.length; i++)
+        for (let j = i + 1; j < dots.length; j++)
+          if (legal(i, j)) return false;
+      return true;
     }
 
-    // ---- UI updates ----
+    // ---------- AI ----------
+    function aiStep() {
+      const moves = allLegalMoves();
+      if (!moves.length) { endGame(); return; }
+      // 1) take the move completing the most triangles
+      let best = null, bestN = 0;
+      for (const [i, j] of moves) {
+        const n = completedBy(i, j).length;
+        if (n > bestN) { bestN = n; best = [i, j]; }
+      }
+      if (best) return drawEdge(best[0], best[1]);
+      // 2) otherwise prefer a move that doesn't gift the opponent a triangle
+      const safe = moves.filter(([i, j]) => !givesAway(i, j));
+      const pool = safe.length ? safe : moves;
+      const pick = pool[(Math.random() * pool.length) | 0];
+      drawEdge(pick[0], pick[1]);
+    }
+    // Would drawing (i,j) create an empty triangle the opponent can then close?
+    function givesAway(i, j) {
+      for (let k = 0; k < dots.length; k++) {
+        if (k === i || k === j) continue;
+        const ai = adj[i].has(k), aj = adj[j].has(k);
+        if (ai === aj) continue;                       // need exactly one side present
+        if (!isEmptyTri(i, j, k)) continue;
+        const need = ai ? j : i;                       // the missing edge
+        if (legal(need, k) || (need === i ? adj[i].has(k) : adj[j].has(k))) return true;
+      }
+      return false;
+    }
+
+    // ---------- board setup ----------
+    function rand(a, b) { return a + Math.random() * (b - a); }
+    function makeDots(n) {
+      const pts = [
+        { x: M, y: M }, { x: W - M, y: M }, { x: M, y: H - M }, { x: W - M, y: H - M }
+      ];
+      const minD = Math.max(46, Math.sqrt((W - 2 * M) * (H - 2 * M) / n) * 0.72);
+      let tries = 0;
+      while (pts.length < n && tries < 8000) {
+        tries++;
+        const p = { x: rand(M, W - M), y: rand(M, H - M) };
+        let ok = true;
+        for (const q of pts) if (Math.hypot(p.x - q.x, p.y - q.y) < minD) { ok = false; break; }
+        if (ok) pts.push(p);
+      }
+      return pts;
+    }
+
+    function newGame() {
+      mode = modeSel.value;
+      dots = makeDots(+sizeSel.value);
+      edgeSet = new Set();
+      adj = dots.map(() => new Set());
+      triangles = []; triKeys = new Set();
+      current = 0; scores = [0, 0]; busy = false; selected = null; pointer = null;
+      s0.querySelector('.name').textContent = mode === 'cpu' ? 'You' : 'Player 1';
+      s1.querySelector('.name').textContent = mode === 'cpu' ? 'Computer' : 'Player 2';
+      render(); updateScores(); updateStatus();
+    }
+
+    // ---------- rendering ----------
+    function nearestDot(p, radius) {
+      let best = -1, bestD = radius;
+      for (let i = 0; i < dots.length; i++) {
+        const d = Math.hypot(p.x - dots[i].x, p.y - dots[i].y);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      return best;
+    }
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+      // filled triangles
+      for (const t of triangles) {
+        const [a, b, c] = t.v.map(i => dots[i]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.closePath();
+        ctx.fillStyle = FILL[t.owner]; ctx.fill();
+      }
+      // edges
+      ctx.lineCap = 'round';
+      for (const e of edgeSet) {
+        const p = e.split(','), a = dots[+p[0]], b = dots[+p[1]];
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = '#cfd5df'; ctx.lineWidth = 3; ctx.stroke();
+      }
+      // preview line while choosing a second dot
+      if (selected !== null && pointer && !busy && humanTurn()) {
+        const a = dots[selected];
+        const t = nearestDot(pointer, 20);
+        const end = t >= 0 ? dots[t] : pointer;
+        const ok = t >= 0 && t !== selected && legal(selected, t);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(end.x, end.y);
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = (t >= 0 && t !== selected) ? (ok ? '#5fd48a' : '#ff5c5c') : COL[current];
+        ctx.lineWidth = 3; ctx.stroke(); ctx.setLineDash([]);
+      }
+      // dots
+      for (let i = 0; i < dots.length; i++) {
+        ctx.beginPath(); ctx.arc(dots[i].x, dots[i].y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#c3c9d4'; ctx.fill();
+      }
+      // selected dot ring
+      if (selected !== null) {
+        const a = dots[selected];
+        ctx.beginPath(); ctx.arc(a.x, a.y, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = COL[current]; ctx.lineWidth = 3; ctx.stroke();
+      }
+    }
+
+    // ---------- ui ----------
+    function humanTurn() { return mode === '2p' || current === 0; }
     function updateScores() {
       s0.querySelector('.num').textContent = scores[0];
       s1.querySelector('.num').textContent = scores[1];
       s0.classList.toggle('active', current === 0);
       s1.classList.toggle('active', current === 1);
     }
-    function names() {
-      return mode === 'cpu' ? ['You', 'Computer'] : ['Player 1', 'Player 2'];
-    }
+    function names() { return mode === 'cpu' ? ['You', 'Computer'] : ['Player 1', 'Player 2']; }
     function updateStatus() {
       const nm = names();
       statusEl.textContent = (mode === 'cpu' && current === 0) ? 'Your turn'
-        : (mode === 'cpu' && current === 1) ? "Computer's turn…"
-        : nm[current] + "'s turn";
+        : (mode === 'cpu' && current === 1) ? "Computer’s turn…"
+        : nm[current] + "’s turn";
       statusEl.style.color = COL[current];
     }
     function endGame() {
       const nm = names();
       s0.classList.remove('active'); s1.classList.remove('active');
       let msg;
-      if (scores[0] === scores[1]) msg = "It's a tie! " + scores[0] + '–' + scores[1];
+      if (scores[0] === scores[1]) msg = "It’s a tie! " + scores[0] + '–' + scores[1];
       else {
         const w = scores[0] > scores[1] ? 0 : 1;
-        msg = nm[w] + ' win' + (nm[w] === 'You' ? '' : 's') + '! ' +
+        msg = nm[w] + (nm[w] === 'You' ? ' win! ' : ' wins! ') +
               Math.max(scores[0], scores[1]) + '–' + Math.min(scores[0], scores[1]);
       }
       statusEl.textContent = '🏆 ' + msg;
@@ -304,35 +330,29 @@
       busy = false;
     }
 
-    function newGame() {
-      mode = modeSel.value;
-      buildBoard(+sizeSel.value);
-      current = 0; scores = [0, 0]; busy = false; hoverEdge = null;
-      s1.querySelector('.name').textContent = mode === 'cpu' ? 'Computer' : 'Player 2';
-      s0.querySelector('.name').textContent = mode === 'cpu' ? 'You' : 'Player 1';
-      draw(); updateScores(); updateStatus();
+    function coords(e) {
+      const r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
     }
-
-    // ---- events ----
     canvas.addEventListener('pointerdown', function (e) {
       if (busy || !humanTurn()) return;
-      const c = canvasCoords(e);
-      const id = edgeAt(c.x, c.y);
-      if (id) applyMove(id);
+      const p = coords(e), i = nearestDot(p, 22);
+      if (i < 0) { selected = null; render(); return; }
+      if (selected === null) { selected = i; render(); return; }
+      if (i === selected) { selected = null; render(); return; }
+      if (legal(selected, i)) drawEdge(selected, i);
+      else { selected = i; render(); }        // start fresh from the new dot
     });
     canvas.addEventListener('pointermove', function (e) {
-      if (e.pointerType === 'touch' || busy || !humanTurn()) return;
-      const c = canvasCoords(e);
-      const id = edgeAt(c.x, c.y);
-      if (id !== hoverEdge) { hoverEdge = id; draw(); }
+      if (e.pointerType === 'touch') return;
+      pointer = coords(e);
+      if (selected !== null && !busy && humanTurn()) render();
     });
-    canvas.addEventListener('pointerleave', function () {
-      if (hoverEdge) { hoverEdge = null; draw(); }
-    });
+    canvas.addEventListener('pointerleave', function () { pointer = null; if (selected !== null) render(); });
+
     document.getElementById('newgame').addEventListener('click', newGame);
     modeSel.addEventListener('change', newGame);
     sizeSel.addEventListener('change', newGame);
-
     newGame();
   })();
   </script>
