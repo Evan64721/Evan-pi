@@ -88,6 +88,7 @@
     let triKeys;             // Set of "i,j,k" already claimed
     let current, scores, mode, busy;
     let selected = null, pointer = null, dragging = false;
+    let over = false, winner = -1, winMsg = '', confetti = [], animId = 0, animFrames = 0;
 
     // ---------- geometry ----------
     function orient(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
@@ -245,6 +246,7 @@
       adj = dots.map(() => new Set());
       triangles = []; triKeys = new Set();
       current = 0; scores = [0, 0]; busy = false; selected = null; pointer = null;
+      over = false; winner = -1; confetti = []; if (animId) cancelAnimationFrame(animId); animId = 0;
       s0.querySelector('.name').textContent = mode === 'cpu' ? 'You' : 'Player 1';
       s1.querySelector('.name').textContent = mode === 'cpu' ? 'Computer' : 'Player 2';
       render(); updateScores(); updateStatus();
@@ -297,6 +299,19 @@
         ctx.beginPath(); ctx.arc(a.x, a.y, 9, 0, Math.PI * 2);
         ctx.strokeStyle = COL[current]; ctx.lineWidth = 3; ctx.stroke();
       }
+      // pulsing glow on the winner's triangles
+      if (over && winner >= 0) {
+        const alpha = 0.35 + 0.35 * Math.sin(performance.now() / 260);
+        ctx.save(); ctx.globalAlpha = alpha;
+        ctx.strokeStyle = COL[winner]; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+        for (const t of triangles) {
+          if (t.owner !== winner) continue;
+          const [p, q, r] = t.v.map(i => dots[i]);
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.lineTo(r.x, r.y); ctx.closePath();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
     }
 
     // ---------- ui ----------
@@ -316,18 +331,80 @@
       statusEl.style.color = COL[current];
     }
     function endGame() {
+      if (over) return;
+      over = true; busy = false; selected = null; dragging = false;
       const nm = names();
       s0.classList.remove('active'); s1.classList.remove('active');
-      let msg;
-      if (scores[0] === scores[1]) msg = "It’s a tie! " + scores[0] + '–' + scores[1];
+      if (scores[0] === scores[1]) { winner = -1; winMsg = "It’s a tie!  " + scores[0] + '–' + scores[1]; }
       else {
-        const w = scores[0] > scores[1] ? 0 : 1;
-        msg = nm[w] + (nm[w] === 'You' ? ' win! ' : ' wins! ') +
-              Math.max(scores[0], scores[1]) + '–' + Math.min(scores[0], scores[1]);
+        winner = scores[0] > scores[1] ? 0 : 1;
+        winMsg = nm[winner] + (nm[winner] === 'You' ? ' win!  ' : ' wins!  ') +
+                 Math.max(scores[0], scores[1]) + '–' + Math.min(scores[0], scores[1]);
       }
-      statusEl.textContent = '🏆 ' + msg;
+      statusEl.textContent = '🏆 ' + winMsg;
       statusEl.style.color = 'var(--fg)';
-      busy = false;
+      spawnConfetti();
+      animFrames = 0;
+      animId = requestAnimationFrame(tick);
+    }
+
+    // ---------- winning animation ----------
+    function spawnConfetti() {
+      confetti = [];
+      const cols = winner < 0 ? [COL[0], COL[1], '#ffffff']
+                              : [COL[winner], '#ffffff', COL[winner]];
+      const cx = W / 2, cy = H * 0.34;
+      for (let i = 0; i < 170; i++) {
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;   // burst upward + spread
+        const spd = 3 + Math.random() * 7.5;
+        confetti.push({
+          x: cx + (Math.random() - 0.5) * 90, y: cy + (Math.random() - 0.5) * 30,
+          vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+          size: 4 + Math.random() * 5, rot: Math.random() * 6.28,
+          vrot: (Math.random() - 0.5) * 0.4,
+          color: cols[(Math.random() * cols.length) | 0], shape: Math.random() < 0.5 ? 0 : 1
+        });
+      }
+    }
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath(); ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+    function drawBanner() {
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = '700 30px system-ui, sans-serif';
+      const tw = ctx.measureText('🏆 ' + winMsg).width;
+      const bw = Math.min(W - 40, Math.max(260, tw + 60)), bh = 92;
+      const bx = (W - bw) / 2, by = H / 2 - bh / 2;
+      ctx.fillStyle = 'rgba(16,19,26,.9)';
+      roundRect(bx, by, bw, bh, 16); ctx.fill();
+      ctx.strokeStyle = winner < 0 ? '#c3c9d4' : COL[winner];
+      ctx.lineWidth = 2; roundRect(bx, by, bw, bh, 16); ctx.stroke();
+      ctx.fillStyle = '#ffffff'; ctx.fillText('🏆 ' + winMsg, W / 2, by + 34);
+      ctx.font = '400 14px system-ui, sans-serif'; ctx.fillStyle = '#9aa0aa';
+      ctx.fillText('Press “New Game” to play again', W / 2, by + 66);
+      ctx.restore();
+    }
+    function tick() {
+      animFrames++;
+      render();
+      for (const c of confetti) {
+        c.vy += 0.15; c.vx *= 0.995;
+        c.x += c.vx; c.y += c.vy; c.rot += c.vrot;
+        ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot); ctx.fillStyle = c.color;
+        if (c.shape === 0) ctx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size * 0.6);
+        else { ctx.beginPath(); ctx.arc(0, 0, c.size / 2, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      }
+      confetti = confetti.filter(c => c.y < H + 30);
+      drawBanner();
+      if (confetti.length && animFrames < 600) animId = requestAnimationFrame(tick);
+      else { animId = 0; render(); drawBanner(); }
     }
 
     function coords(e) {
@@ -335,7 +412,7 @@
       return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
     }
     canvas.addEventListener('pointerdown', function (e) {
-      if (busy || !humanTurn()) return;
+      if (busy || over || !humanTurn()) return;
       const p = coords(e), i = nearestDot(p, 24);
       pointer = p;
       if (i < 0) { selected = null; dragging = false; render(); return; }
@@ -346,7 +423,7 @@
       render();
     });
     canvas.addEventListener('pointermove', function (e) {
-      if (busy || !humanTurn() || selected === null) return;
+      if (busy || over || !humanTurn() || selected === null) return;
       pointer = coords(e);
       render();
     });
