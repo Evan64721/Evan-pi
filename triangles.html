@@ -88,7 +88,7 @@
     let triKeys;             // Set of "i,j,k" already claimed
     let current, scores, mode, busy;
     let selected = null, pointer = null, dragging = false;
-    let over = false, winner = -1, winMsg = '', confetti = [], animId = 0, animFrames = 0;
+    let over = false, winner = -1, winMsg = '', confetti = [], animId = 0, animFrames = 0, btnRect = null;
 
     // ---------- geometry ----------
     function orient(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
@@ -246,7 +246,9 @@
       adj = dots.map(() => new Set());
       triangles = []; triKeys = new Set();
       current = 0; scores = [0, 0]; busy = false; selected = null; pointer = null;
-      over = false; winner = -1; confetti = []; if (animId) cancelAnimationFrame(animId); animId = 0;
+      over = false; winner = -1; confetti = []; btnRect = null;
+      if (animId) cancelAnimationFrame(animId); animId = 0;
+      canvas.style.cursor = 'default';
       s0.querySelector('.name').textContent = mode === 'cpu' ? 'You' : 'Player 1';
       s1.querySelector('.name').textContent = mode === 'cpu' ? 'Computer' : 'Player 2';
       render(); updateScores(); updateStatus();
@@ -379,17 +381,25 @@
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = '700 30px system-ui, sans-serif';
       const tw = ctx.measureText('🏆 ' + winMsg).width;
-      const bw = Math.min(W - 40, Math.max(260, tw + 60)), bh = 92;
+      const bw = Math.min(W - 40, Math.max(280, tw + 60)), bh = 128;
       const bx = (W - bw) / 2, by = H / 2 - bh / 2;
-      ctx.fillStyle = 'rgba(16,19,26,.9)';
+      // panel
+      ctx.fillStyle = 'rgba(16,19,26,.92)';
       roundRect(bx, by, bw, bh, 16); ctx.fill();
       ctx.strokeStyle = winner < 0 ? '#c3c9d4' : COL[winner];
       ctx.lineWidth = 2; roundRect(bx, by, bw, bh, 16); ctx.stroke();
-      ctx.fillStyle = '#ffffff'; ctx.fillText('🏆 ' + winMsg, W / 2, by + 34);
-      ctx.font = '400 14px system-ui, sans-serif'; ctx.fillStyle = '#9aa0aa';
-      ctx.fillText('Press “New Game” to play again', W / 2, by + 66);
+      // title
+      ctx.fillStyle = '#ffffff'; ctx.fillText('🏆 ' + winMsg, W / 2, by + 40);
+      // Play Again button
+      const btnW = 150, btnH = 42, btnX = W / 2 - btnW / 2, btnY = by + bh - btnH - 20;
+      btnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+      ctx.fillStyle = '#6ca0ff';
+      roundRect(btnX, btnY, btnW, btnH, 10); ctx.fill();
+      ctx.fillStyle = '#0b0d12'; ctx.font = '600 17px system-ui, sans-serif';
+      ctx.fillText('Play Again', W / 2, btnY + btnH / 2 + 1);
       ctx.restore();
     }
+    function inRect(p, r) { return r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
     function tick() {
       animFrames++;
       render();
@@ -412,7 +422,11 @@
       return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
     }
     canvas.addEventListener('pointerdown', function (e) {
-      if (busy || over || !humanTurn()) return;
+      if (over) {                                   // only the Play Again button is live
+        if (inRect(coords(e), btnRect)) newGame();
+        return;
+      }
+      if (busy || !humanTurn()) return;
       const p = coords(e), i = nearestDot(p, 24);
       pointer = p;
       if (i < 0) { selected = null; dragging = false; render(); return; }
@@ -423,7 +437,11 @@
       render();
     });
     canvas.addEventListener('pointermove', function (e) {
-      if (busy || over || !humanTurn() || selected === null) return;
+      if (over) {                                   // show pointer cursor over the button
+        if (e.pointerType !== 'touch') canvas.style.cursor = inRect(coords(e), btnRect) ? 'pointer' : 'default';
+        return;
+      }
+      if (busy || !humanTurn() || selected === null) return;
       pointer = coords(e);
       render();
     });
