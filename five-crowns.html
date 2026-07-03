@@ -35,6 +35,17 @@
   .card.joker{ background:linear-gradient(135deg,#2a2f3a,#3a4258); color:#ffd45f; border-color:#4a5268; }
   .card.joker .rk{ font-size:.7rem; letter-spacing:.5px; } .card.joker .su{ font-size:1.4rem; }
   .card.back{ background:repeating-linear-gradient(45deg,#26304a,#26304a 6px,#1c2438 6px,#1c2438 12px); border-color:#33405f; color:transparent; }
+  .card.back .emblem{ color:#d7b45e; opacity:.55; font-size:1.5rem; }
+  .card.stack{ box-shadow:2px 2px 0 #1c2438,4px 4px 0 #26304a; }
+  .card.mini{ width:34px; height:48px; border-radius:6px; font-weight:700; }
+  .card.mini .rk{ font-size:.85rem; } .card.mini .su{ font-size:.68rem; }
+  .card.mini.joker .rk{ font-size:.5rem; } .card.mini.joker .su{ font-size:.9rem; }
+  .card.mini.back .emblem{ font-size:1rem; }
+  .opp{ max-width:300px; }
+  .oppcards{ display:flex; flex-wrap:wrap; gap:5px 7px; justify-content:center; margin-top:.45rem; }
+  .oppgrp{ display:inline-flex; gap:2px; }
+  .oppfan{ display:flex; justify-content:center; margin-top:.4rem; padding-left:16px; }
+  .oppfan .card{ margin-left:-16px; }
   .card.clickable{ cursor:pointer; } .card.clickable:hover{ transform:translateY(-4px); transition:transform .1s; box-shadow:0 4px 10px rgba(0,0,0,.4); }
   .card .wbadge{ position:absolute; top:2px; right:2px; background:var(--accent); color:#0b0d12; font-size:.5rem; font-weight:700; border-radius:3px; padding:0 2px; }
   .pilecount{ color:var(--muted); font-size:.75rem; margin-top:.25rem; }
@@ -200,7 +211,7 @@ function beginTurn(){
   renderAll();
   if(!p.isHuman) setTimeout(cpuTurn,700);
 }
-function ensureDraw(){ if(G.draw.length===0){ const top=G.discard.pop(); G.draw=shuffle(G.discard); G.discard=[top]; } }
+function ensureDraw(){ if(G.draw.length===0){ const top=G.discard.pop(); G.draw=shuffle(G.discard); G.discard=[top]; setStatus('Draw pile empty — the discard pile is reshuffled back into the deck.'); return true; } return false; }
 function playerDraw(source){
   const p=G.players[G.current];
   ensureDraw();
@@ -260,9 +271,9 @@ function nextRound(){
 /* ============ RENDERING ============ */
 function cardEl(card, opts){
   opts=opts||{};
-  const d=document.createElement('div'); d.className='card';
-  if(opts.back||card===null){ d.classList.add('back'); d.innerHTML=''; return d; }
-  if(card.joker){ d.classList.add('joker'); d.innerHTML='<span class="rk">JOKER</span><span class="su">★</span>'; }
+  const d=document.createElement('div'); d.className='card'; if(opts.mini) d.classList.add('mini');
+  if(opts.back||card===null){ d.classList.add('back'); d.innerHTML='<span class="emblem">♛</span>'; return d; }
+  if(card.joker){ d.classList.add('joker'); d.innerHTML='<span class="rk">'+(opts.mini?'JKR':'JOKER')+'</span><span class="su">★</span>'; }
   else { d.classList.add(SUIT[card.suit].cls); d.innerHTML='<span class="rk">'+rankStr(card.rank)+'</span><span class="su">'+SUIT[card.suit].ch+'</span>'; }
   if(opts.wild){ const b=document.createElement('span'); b.className='wbadge'; b.textContent='W'; d.appendChild(b); }
   if(opts.groupIdx!=null && opts.groupIdx>=0) d.classList.add('grp'+(opts.groupIdx%6));
@@ -275,12 +286,27 @@ function renderAll(){
   const ob=$('opponents'); ob.innerHTML='';
   G.players.forEach((p,i)=>{ if(p.isHuman) return;
     const el=document.createElement('div'); el.className='opp'+(G.current===i&&G.phase!=='scoring'?' turn':'')+(p.out?' out':'');
-    el.innerHTML='<div class="nm">'+p.name+(p.out?' ✅':'')+'</div><div class="meta">'+p.hand.length+' cards · total '+p.cum+'</div>';
+    const revealed = p.out || G.phase==='scoring';
+    if(revealed){
+      const meld=bestMeld(p.hand,G.round);
+      const lo = p.roundScore!=null ? p.roundScore : meld.score;
+      el.innerHTML='<div class="nm">'+p.name+(p.out?' ✅ out':'')+'</div><div class="meta">total '+p.cum+' · leftover '+lo+'</div>';
+      const wrap=document.createElement('div'); wrap.className='oppcards';
+      meld.groups.forEach((g,gi)=>{ const grp=document.createElement('div'); grp.className='oppgrp';
+        g.cards.forEach(c=>grp.appendChild(cardEl(c,{mini:true,wild:isWild(c,G.round),groupIdx:gi}))); wrap.appendChild(grp); });
+      meld.deadwood.forEach(c=> wrap.appendChild(cardEl(c,{mini:true,wild:isWild(c,G.round),dead:true})));
+      el.appendChild(wrap);
+    } else {
+      el.innerHTML='<div class="nm">'+p.name+'</div><div class="meta">'+p.hand.length+' cards · total '+p.cum+'</div>';
+      const fan=document.createElement('div'); fan.className='oppfan';
+      for(let k=0;k<p.hand.length;k++) fan.appendChild(cardEl(null,{back:true,mini:true}));
+      el.appendChild(fan);
+    }
     ob.appendChild(el); });
   // piles
-  const dp=$('drawpile'); dp.innerHTML=''; const back=cardEl(null,{back:true});
+  const dp=$('drawpile'); dp.innerHTML=''; const back=cardEl(null,{back:true}); back.classList.add('stack');
   if(humanTurn()&&G.phase==='draw'){ back.classList.add('clickable'); back.onclick=()=>playerDraw('draw'); }
-  dp.appendChild(back); $('drawcount').textContent=G.draw.length+' left';
+  dp.appendChild(back); $('drawcount').textContent=G.draw.length+' in deck';
   const disc=$('discardpile'); disc.innerHTML='';
   if(G.discard.length){ const top=G.discard[G.discard.length-1]; const te=cardEl(top,{wild:isWild(top,G.round)});
     if(humanTurn()&&G.phase==='draw'){ te.classList.add('clickable'); te.onclick=()=>playerDraw('discard'); } disc.appendChild(te); }
