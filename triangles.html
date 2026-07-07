@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Triangles &middot; Evan Leckliter</title>
   <meta name="description" content="Triangles — connect the scattered dots and claim the triangles you complete. Play vs the computer or a friend." />
+  <script src="auth.js"></script>
   <style>
     :root {
       --bg: #0f1116; --fg: #e6e6e6; --muted: #9aa0aa; --line: #2a2f3a;
@@ -345,6 +346,11 @@
       }
       statusEl.textContent = '🏆 ' + winMsg;
       statusEl.style.color = 'var(--fg)';
+      // Record the result for the signed-in player (only vs the computer,
+      // where player 0 is "You").
+      if (mode === 'cpu' && window.EvAuth) {
+        EvAuth.recordResult('triangles', winner === 0 ? 'win' : winner === 1 ? 'loss' : 'tie');
+      }
       spawnConfetti();
       animFrames = 0;
       animId = requestAnimationFrame(tick);

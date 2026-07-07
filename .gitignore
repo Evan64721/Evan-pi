@@ -1,0 +1,3 @@
+# local SQLite databases created when running the API outside the server
+server/data.db
+*.db

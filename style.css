@@ -46,3 +46,175 @@ footer {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* ---------- hamburger menu ---------- */
+.menu-btn {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 30;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  background: #171a21;
+  cursor: pointer;
+}
+.menu-btn span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--fg);
+  border-radius: 2px;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.backdrop.show { opacity: 1; visibility: visible; }
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
+  height: 100%;
+  width: 280px;
+  max-width: 85vw;
+  padding: 1.25rem;
+  background: #12151c;
+  border-left: 1px solid #2a2f3a;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  text-align: left;
+  overflow-y: auto;
+}
+.drawer.show { transform: translateX(0); }
+.drawer h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.25rem;
+}
+.drawer .who {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+}
+.drawer nav { display: flex; flex-direction: column; gap: 0.5rem; }
+.drawer nav button {
+  width: 100%;
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  background: #171a21;
+  color: var(--fg);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.drawer nav button:hover { border-color: var(--accent); }
+.drawer .close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ---------- modal (login / signup / stats) ---------- */
+.modal-back {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+}
+.modal-back.show { display: grid; }
+.modal {
+  width: 340px;
+  max-width: 100%;
+  padding: 1.5rem;
+  background: #12151c;
+  border: 1px solid #2a2f3a;
+  border-radius: 14px;
+  text-align: left;
+}
+.modal h2 { margin: 0 0 1rem; font-size: 1.25rem; }
+.modal label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.75rem 0 0.25rem;
+}
+.modal input {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  background: #0d1015;
+  color: var(--fg);
+  font-size: 1rem;
+}
+.modal .err {
+  color: #ff8080;
+  font-size: 0.85rem;
+  min-height: 1.1em;
+  margin: 0.6rem 0 0;
+}
+.modal .actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+}
+.modal button {
+  flex: 1;
+  padding: 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #2a2f3a;
+  background: #171a21;
+  color: var(--fg);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.modal button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1020;
+  font-weight: 600;
+}
+
+/* stats table */
+.stats-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+.stat-row {
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+}
+.stat-row .game { font-weight: 600; }
+.stat-row .rate {
+  font-size: 1.5rem;
+  color: var(--accent);
+  margin: 0.15rem 0;
+}
+.stat-row .detail { color: var(--muted); font-size: 0.85rem; }
+.stats-empty { color: var(--muted); }

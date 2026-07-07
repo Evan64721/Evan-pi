@@ -1,0 +1,25 @@
+[Unit]
+Description=Evan-pi API (accounts + game stats)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/Evan-pi/server
+ExecStart=/usr/bin/python3 /srv/Evan-pi/server/app.py
+Environment=EV_HOST=127.0.0.1
+Environment=EV_PORT=8787
+Environment=EV_DB=/var/lib/evan-api/data.db
+Environment=EV_SECURE_COOKIE=1
+Restart=on-failure
+RestartSec=2
+User=www-data
+Group=www-data
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/evan-api
+
+[Install]
+WantedBy=multi-user.target

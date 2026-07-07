@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Five Crowns &middot; Evan Leckliter</title>
 <meta name="description" content="Five Crowns — the five-suit rummy card game. Play vs the computer across 11 rounds." />
+<script src="auth.js"></script>
 <style>
   :root{ --bg:#0f1116; --fg:#e6e6e6; --muted:#9aa0aa; --line:#2a2f3a; --panel:#171b24; --accent:#6ca0ff; }
   *{ box-sizing:border-box; }
@@ -372,7 +373,16 @@ function showResults(){
   let rows='';
   G.players.forEach(p=>{ rows+='<tr'+(over&&p.cum===leadCum?' class="win"':'')+'><td>'+p.name+(p.out?' ✅':'')+'</td><td class="n">'+p.roundScore+'</td><td class="n">'+p.cum+'</td></tr>'; });
   let html='';
-  if(over){ const w=sorted[0].p; html='<h2>🏆 '+(w.isHuman?'You win!':w.name+' wins!')+'</h2>'; launchConfetti(); }
+  if(over){ const w=sorted[0].p; html='<h2>🏆 '+(w.isHuman?'You win!':w.name+' wins!')+'</h2>'; launchConfetti();
+    // Record the result for the signed-in player. A tie means multiple players
+    // share the lowest total; the human wins outright only if uniquely lowest.
+    if(window.EvAuth){
+      const humanCum=G.players.find(p=>p.isHuman).cum;
+      const sharedLow=G.players.filter(p=>p.cum===leadCum).length>1;
+      const outcome=(humanCum===leadCum)?(sharedLow?'tie':'win'):'loss';
+      EvAuth.recordResult('five-crowns', outcome);
+    }
+  }
   else html='<h2>Round '+G.round+' complete</h2>';
   html+='<table><tr><th>Player</th><th class="n">Round</th><th class="n">Total</th></tr>'+rows+'</table>';
   html+= over? '<button class="primary" id="again">Play Again</button>' : '<button class="primary" id="cont">Next Round (Round '+(G.round+1)+')</button>';

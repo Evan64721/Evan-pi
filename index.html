@@ -6,8 +6,26 @@
   <title>Evan Leckliter</title>
   <meta name="description" content="Personal website of Evan Leckliter." />
   <link rel="stylesheet" href="style.css" />
+  <script src="auth.js"></script>
 </head>
 <body>
+  <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+
+  <div class="backdrop" id="backdrop"></div>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <button class="close" id="drawerClose" aria-label="Close menu">&times;</button>
+    <h2>Menu</h2>
+    <p class="who" id="who">Not signed in</p>
+    <nav id="drawerNav"></nav>
+  </aside>
+
+  <div class="modal-back" id="modalBack">
+    <div class="modal" id="modal"></div>
+  </div>
+
   <main class="wrap">
     <header>
       <h1>Evan Leckliter</h1>
@@ -37,6 +55,171 @@
 
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+
+  <script>
+  (function () {
+    var menuBtn = document.getElementById("menuBtn");
+    var drawer = document.getElementById("drawer");
+    var backdrop = document.getElementById("backdrop");
+    var drawerClose = document.getElementById("drawerClose");
+    var who = document.getElementById("who");
+    var nav = document.getElementById("drawerNav");
+    var modalBack = document.getElementById("modalBack");
+    var modal = document.getElementById("modal");
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    // Cached snapshot of the last /api/me response so the Stats view doesn't
+    // need to refetch.
+    var state = { user: null, stats: null };
+
+    // ---------- drawer ----------
+    function openDrawer() {
+      who.textContent = "Loading…";
+      nav.innerHTML = "";
+      renderMenu();
+      drawer.classList.add("show");
+      backdrop.classList.add("show");
+      menuBtn.setAttribute("aria-expanded", "true");
+      drawer.setAttribute("aria-hidden", "false");
+    }
+    function closeDrawer() {
+      drawer.classList.remove("show");
+      backdrop.classList.remove("show");
+      menuBtn.setAttribute("aria-expanded", "false");
+      drawer.setAttribute("aria-hidden", "true");
+    }
+    menuBtn.addEventListener("click", openDrawer);
+    drawerClose.addEventListener("click", closeDrawer);
+    backdrop.addEventListener("click", closeDrawer);
+
+    // Build the menu contextually: Stats + (Login/Signup when signed out,
+    // Sign out when signed in). Fetches the current session from the backend.
+    function renderMenu() {
+      return EvAuth.me().then(function (data) {
+        state.user = data.user;
+        state.stats = data.stats;
+        who.textContent = data.user ? ("Signed in as " + data.user) : "Not signed in";
+        nav.innerHTML = "";
+
+        addItem("📊 Stats", showStats);
+        if (data.user) {
+          addItem("🚪 Sign out", function () {
+            EvAuth.logout().then(renderMenu);
+          });
+        } else {
+          addItem("🔑 Login", function () { openAuthModal("login"); });
+          addItem("✨ Sign up", function () { openAuthModal("signup"); });
+        }
+      }).catch(function () {
+        who.textContent = "Menu unavailable — is the server running?";
+        nav.innerHTML = "";
+        addItem("📊 Stats", showStats);
+      });
+    }
+    function addItem(label, handler) {
+      var b = document.createElement("button");
+      b.textContent = label;
+      b.addEventListener("click", handler);
+      nav.appendChild(b);
+    }
+
+    // ---------- modal ----------
+    function openModal(html) {
+      modal.innerHTML = html;
+      modalBack.classList.add("show");
+    }
+    function closeModal() { modalBack.classList.remove("show"); }
+    modalBack.addEventListener("click", function (e) {
+      if (e.target === modalBack) closeModal();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { closeModal(); closeDrawer(); }
+    });
+
+    // ---------- login / signup ----------
+    function openAuthModal(mode) {
+      var isSignup = mode === "signup";
+      openModal(
+        '<h2>' + (isSignup ? "Sign up" : "Login") + '</h2>' +
+        '<label for="u">Username</label>' +
+        '<input id="u" type="text" autocomplete="username" />' +
+        '<label for="p">Password</label>' +
+        '<input id="p" type="password" autocomplete="' +
+          (isSignup ? "new-password" : "current-password") + '" />' +
+        '<p class="err" id="err"></p>' +
+        '<div class="actions">' +
+          '<button id="cancel">Cancel</button>' +
+          '<button class="primary" id="go">' +
+            (isSignup ? "Create account" : "Login") + '</button>' +
+        '</div>'
+      );
+      var uEl = document.getElementById("u");
+      var pEl = document.getElementById("p");
+      var err = document.getElementById("err");
+      uEl.focus();
+
+      function submit() {
+        err.textContent = "";
+        var go = document.getElementById("go");
+        go.disabled = true;
+        var p = isSignup ? EvAuth.signup(uEl.value, pEl.value)
+                         : EvAuth.login(uEl.value, pEl.value);
+        p.then(function () {
+          closeModal();
+          renderMenu();
+        }).catch(function (ex) {
+          err.textContent = ex.message;
+          go.disabled = false;
+        });
+      }
+      document.getElementById("go").addEventListener("click", submit);
+      document.getElementById("cancel").addEventListener("click", closeModal);
+      pEl.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+    }
+
+    // ---------- stats ----------
+    function showStats() {
+      if (!state.user || !state.stats) {
+        openModal(
+          '<h2>Stats</h2>' +
+          '<p class="stats-empty">Log in or sign up to track your win rate per game.</p>' +
+          '<div class="actions"><button class="primary" id="ok">OK</button></div>'
+        );
+        document.getElementById("ok").addEventListener("click", closeModal);
+        return;
+      }
+
+      var user = state.user;
+      var stats = state.stats;
+      var rows = stats.map(function (s) {
+        var rate = s.games ? s.winRate.toFixed(0) + "%" : "—";
+        var detail = s.games
+          ? (s.wins + " win" + (s.wins === 1 ? "" : "s") + " / " +
+             s.games + " game" + (s.games === 1 ? "" : "s"))
+          : "No games played yet";
+        return (
+          '<div class="stat-row">' +
+            '<div class="game">' + esc(s.label) + '</div>' +
+            '<div class="rate">' + rate + '</div>' +
+            '<div class="detail">' + detail + '</div>' +
+          '</div>'
+        );
+      }).join("");
+
+      openModal(
+        '<h2>Stats — ' + esc(user) + '</h2>' +
+        '<div class="stats-grid">' + rows + '</div>' +
+        '<div class="actions"><button class="primary" id="ok">Done</button></div>'
+      );
+      document.getElementById("ok").addEventListener("click", closeModal);
+    }
+  })();
   </script>
 </body>
 </html>
