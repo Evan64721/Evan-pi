@@ -55,10 +55,9 @@ footer {
   z-index: 30;
   width: 44px;
   height: 44px;
-  display: grid;
-  place-items: center;
-  gap: 5px;
-  padding: 0;
+  /* Plain block layout (not flex/grid) so it renders as three lines in
+     every browser — Firefox/Safari ignore display:grid on <button>. */
+  padding: 13px 11px;
   border: 1px solid #2a2f3a;
   border-radius: 10px;
   background: #171a21;
@@ -68,8 +67,12 @@ footer {
   display: block;
   width: 20px;
   height: 2px;
+  margin: 0 auto;               /* center each line horizontally */
   background: var(--fg);
   border-radius: 2px;
+}
+.menu-btn span + span {
+  margin-top: 5px;              /* the gap between lines, cross-browser */
 }
 
 .backdrop {
